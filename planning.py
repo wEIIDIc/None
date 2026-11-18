@@ -1,22 +1,23 @@
 import time
 import cv2
-from serial_send import SerialSend as sd
 
 # format "640*480"
 # functions
 class Planning():
-    def __init__(self,detector):
-        self.THRESHOLD_Y1=410
+    def __init__(self,detector,serial_send):
+        self.THRESHOLD_Y1=230
         self.THRESHOLD_Y2=400
         self.VERIFY_Y1=96
-        self.THRESHOLD_Y3=390
-        self.TIMEOUT=0.1    # TIMEOUT*LOOP=5s
-        self.LOOP=50
+        self.THRESHOLD_Y3=230
+        self.TIMEOUT=0.02   
+        self.LOOP=25
         self.LOOP_NEAR=10
         self.TIMEOUT_NEAR=0.05
         self.LOOP_VERIFY=10
         self.TIMEOUT_VERIFY=0.01
         self.ACT_INTERVAL=0.2
+        self.TIMEOUT_SERCURITY=0.2  
+        self.LOOP_SERCURITY=100
         # 抓取间隔
         # 松球后退时间
         # 安全区纠偏旋转时间
@@ -29,14 +30,17 @@ class Planning():
         self.POINT_5=[320,360]  # 后
         self.dect=detector
         self.MY_HOME="blue_home"
-
+        self.sd=serial_send
         self.state_1=0
         self.state_2=0 
+        self.duizhun=False
+        self.duizhun_2=False
+        self.duizhun3=False
 
     def find_block_far_important(self,goal_=["black","orange"]):
         _count=0
-        sd.send(sd.CAMERA_UP)
-        sd.send(sd.GRIPPER_GRASP)
+        self.sd.send(self.sd.CAMERA_UP)
+        self.sd.send(self.sd.GRIPPER_GRASP)
         while True:
             if _count<self.LOOP:
                 # 这个能筛选出goal_列表里包含的最佳目标
@@ -51,20 +55,20 @@ class Planning():
                     if cy_<=self.THRESHOLD_Y1:
                         # 左转
                         if cx_<310: #死区这种我就不单列了
-                            sd.send(sd.AUTOROTATION_L)
+                            self.sd.send(self.sd.AUTOROTATION_L)
                             continue
                         # 右转
                         elif cx_>330:
-                            sd.send(sd.AUTOROTATION_R)
+                            self.sd.send(self.sd.AUTOROTATION_R)
                             continue
                         # 直走
                         else:
-                            sd.send(sd.FORWARD_FAST)
+                            self.sd.send(self.sd.FORWARD_FAST)
                             continue
                     # 很近
                     else:
-                        sd.send (sd.CAMERA_DOWN)
-                        sd.send (sd.GRIPPER_REALSE)
+                        self.sd.send (self.sd.CAMERA_DOWN)
+                        self.sd.send (self.sd.GRIPPER_REALSE)
                         return 1
             else:
                 return 0    # 超时
@@ -84,35 +88,37 @@ class Planning():
                     _,cx_,cy_,_,_=my_list
                     # 左转
                     if cx_<310:
-                        sd.send (sd.TRACK_LEFT)
+                        self.sd.send (self.sd.TRACK_LEFT)
                         continue 
                     # 右转
                     elif cx_>330:
-                        sd.send (sd.TRACK_RIGHT)
+                        self.sd.send (self.sd.TRACK_RIGHT)
                         continue 
                     # 直走
                     else:
                         if cy_<=self.THRESHOLD_Y2:
-                            sd.send (sd.FORWARD_MID)
+                            self.sd.send (self.sd.FORWARD_MID)
                             continue 
                         # 特别近
                         else:
-                            sd.send (sd.FORWARD_SLOW)
+                            self.sd.send (self.sd.FORWARD_SLOW)
                             time.sleep(0.5)         # 抓取间隔
-                            sd.send (sd.STOP)
-                            sd.send (sd.GRIPPER_GRASP)
+                            self.sd.send (self.sd.STOP)
+                            self.sd.send (self.sd.GRIPPER_GRASP)
                             return 1
             else:
                 return 0
 
     def find_block_far_any(self,goal_=["green"]):
+        self.sd.send (self.sd.AUTOROTATION_L)
+        self.sd.send (self.sd.CAMERA_UP)
+        self.sd.send (self.sd.GRIPPER_GRASP)
         _count=0
-        sd.send (sd.CAMERA_UP)
-        sd.send (sd.GRIPPER_GRASP)
+        count_=0
         while True:
             if _count <self.LOOP:
                 # 这个能筛选出goal_列表里包含的最佳目标
-                my_list=self.dect.detect_all(goal_) 
+                my_list=self.dect.detect_closest(goal_) 
                 if my_list is None:
                     _count+=1
                     time.sleep(self.TIMEOUT)
@@ -122,28 +128,67 @@ class Planning():
                     _,cx_,cy_,_,_=my_list
                     # 比较远
                     if cy_<=self.THRESHOLD_Y1:
-                        # 左转
-                        if cx_<310:
-                            sd.send (sd.AUTOROTATION_L)
-                            continue
-                        # 右转
-                        elif cx_>330:
-                            sd.send (sd.AUTOROTATION_R)
-                            continue
+                        if self.duizhun==False:
+                            # 左快转
+                            if cx_<270:
+                                self.sd.send (self.sd.AUTOROTATION_L)
+                                continue
+                            # 右快转
+                            elif cx_>370:
+                                self.sd.send (self.sd.AUTOROTATION_R)
+                                continue
+                            # 慢转
+                            elif 270<cx_<295 or 345<cx_<370:
+                                self.sd.send (self.sd.CAR_AIM,pixel=cx_)
+                                continue
+                            else:
+                                count_+=1
+                                if count_ >=20:
+                                    self.duizhun=True
+                                    count_=0
+                                continue
                         # 直走
                         else:
-                            sd.send (sd.FORWARD_FAST)
+                            print(self.duizhun)
+                            self.sd.send (self.sd.FORWARD_FAST,pixel=0 )
                             continue
                     # 比较近
                     else:
-                        sd.send (sd.CAMERA_DOWN)
-                        sd.send (sd.GRIPPER_REALSE)
+                        self.duizhun=False
+                        self.sd.send (self.sd.CAMERA_DOWN)
+                        self.sd.send (self.sd.GRIPPER_REALSE)
+                        self.sd.send(self.sd.STOP)
+                        time.sleep(1)
                         return 1
             else:
                 return 0
-                
+
+    def test_pid(self):
+        self.sd.send (self.sd.AUTOROTATION_L)
+        self.sd.send (self.sd.CAMERA_UP)
+        self.sd.send (self.sd.GRIPPER_GRASP)
+        while True:
+            # 这个能筛选出goal_列表里包含的最佳目标
+            my_list=self.dect.detect_closest(goal=["green"]) 
+            if my_list is None:
+                time.sleep(self.TIMEOUT)
+                continue
+            else:
+                _,cx_,cy_,_,_=my_list
+                if 310<cx_<330:
+                    cx_=320
+                # 比较远
+                # if cy_<=self.THRESHOLD_Y1:
+                self.sd.send(mode=0x27,pixel=int(cx_))
+                # # 比较近
+                # else:
+                #     self.sd.send (self.sd.STOP)
+                #     return 1
+
 
     def find_block_near_any(self,goal_=["green"]):
+        self.sd.send (self.sd.CAMERA_DOWN)
+        self.sd.send (self.sd.GRIPPER_REALSE)
         _count=0
         while True:
             if _count <self.LOOP_NEAR:
@@ -155,42 +200,43 @@ class Planning():
                 else:
                     _count=0
                     _,cx_,cy_,_,_=my_list
-                    # 左转
-                    if cx_<310:
-                        sd.send (sd.TRACK_LEFT)
-                        continue 
-                    # 右转
-                    elif cx_>330:
-                        sd.send (sd.TRACK_RIGHT)
-                        continue 
-                    # 直走
+                    # 转
+                    if self.duizhun_2 ==False:
+                        if not 310<cx_<330:
+                            self.sd.send (self.sd.CAR_AIM,pixel=cx_)
+                            continue 
+                        # 直走
+                        else:
+                            self.duizhun_2=True
                     else:
                         if cy_<=self.THRESHOLD_Y2:
-                            sd.send (sd.FORWARD_MID)
+                            self.sd.send (self.sd.CAR_TRACK_SLOW,cx_)
                             continue 
                         # 特别近
                         else:
-                            sd.send (sd.FORWARD_SLOW)
+                            self.sd.send (self.sd.FORWARD_SLOW)
                             time.sleep(0.5)         # 抓取间隔
-                            sd.send (sd.STOP)
-                            sd.send (sd.GRIPPER_GRASP)
+                            self.sd.send (self.sd.STOP)
+                            self.sd.send (self.sd.GRIPPER_GRASP)
                             return 1
             else:
                 return 0
 
     def verify_block(self,goal_):# 这个后续可以做一个更加准确的验证函数，即完美贴合夹爪边
-        _R=True    
+        self.sd.send (self.sd.CAMERA_CHECK)
+        time.sleep(0.3)
+        _R=True  
         num_g=0   
         num_b=0
         num_o=0
         _count=0    
         while True:
             if _R==False:
-                sd.send (sd.GRIPPER_REALSE)         
-                sd.send (sd.BACKWARD_FAST)
-                time.sleep(0.5)     # 松球后退时间
-                sd.send (sd.STOP)
-                sd.send (sd.GRIPPER_GRASP)      # 可修改：将这里闭合夹爪之后进行二次检验
+                self.sd.send (self.sd.GRIPPER_REALSE)         
+                self.sd.send (self.sd.BACKWARD_FAST)
+                time.sleep(2)     # 松球后退时间
+                self.sd.send (self.sd.STOP)
+                self.sd.send (self.sd.GRIPPER_GRASP)      # 可修改：将这里闭合夹爪之后进行二次检验
                 return 0                        # 可修改：每次发现夹错了可以先保持自转，然后跳到近点搜索
             else:
                 if _count<self.LOOP_VERIFY: 
@@ -243,48 +289,68 @@ class Planning():
                                     break
                     return 1     # 全部审查合格且不中途退出 
                 else: 
-                    sd.send (sd.GRIPPER_REALSE)         
-                    sd.send (sd.BACKWARD_FAST)
+                    self.sd.send (self.sd.GRIPPER_REALSE)         
+                    self.sd.send (self.sd.BACKWARD_FAST)
                     time.sleep(0.5)     # 松球后退时间
-                    sd.send (sd.STOP)
-                    sd.send (sd.GRIPPER_GRASP)      # 可修改：将这里闭合夹爪之后进行二次检验
+                    self.sd.send (self.sd.STOP)
+                    self.sd.send (self.sd.GRIPPER_GRASP)      # 可修改：将这里闭合夹爪之后进行二次检验
                     return 0                        # 可修改：每次发现夹错了可以先保持自转，然后跳到近点搜索
 
 
     def find_security_far(self,goal_):
         _count=0
-        sd.send (sd.AUTOROTATION_L)
+        count_=0
+        self.sd.send(self.sd.CAMERA_UP)
+        self.sd.send (self.sd.AUTOROTATION_L)
+        print(111)
+        time.sleep(0.3)
         while True:
-            if _count<self.LOOP:
+            if _count<self.LOOP_SERCURITY:
                 my_list=self.dect.detect_closest(goal_)
+                # print (my_list)
                 if my_list is None:
                     _count+=1
-                    time.sleep(self.TIMEOUT)
+                    time.sleep(self.TIMEOUT_SERCURITY)
                     continue
                 else:
                     _count=0
                     _,cx_,cy_,_,_=my_list
                     # 比较远
                     if cy_<=self.THRESHOLD_Y3:
-                        # 左转
-                        if cx_<310:
-                            sd.send (sd.TRACK_LEFT)           
-                            continue
-                        # 右转
-                        elif cx_>330:
-                            sd.send (sd.TRACK_RIGHT)    
-                            continue
-                        # 直走
+                        if self.duizhun3 ==False:
+                            # 左转
+                            if cx_<270:
+                                self.sd.send (self.sd.AUTOROTATION_L)           
+                                continue
+                            # 右转
+                            elif cx_>370:
+                                self.sd.send (self.sd.AUTOROTATION_R)    
+                                continue
+                            # 慢转
+                            elif 270<cx_<295 or 345<cx_<370:
+                                self.sd.send(self.sd.CAR_AIM,pixel=cx_)
+                            # 直走
+                            else:
+                                count_+=1
+                                if count_>=20:
+                                    self.duizhun3=True
+                                    self.sd.send (self.sd.FORWARD_MID)
+                                    continue
                         else:
-                            sd.send (sd.FORWARD_FAST)
                             continue
                     # 很近
                     else:
-                        sd.send (sd.FORWARD_MID)
-                        sd.send(sd.CAMERA_DOWN)
+                        self.duizhun3=False
                         return 1
+            else:
+                self.duizhun3=False
+                print("超时")
+                self.sd.send(self.sd.STOP)
 
     def find_security_near(self,goal_):
+        self.sd.send (self.sd.FORWARD_SLOW)
+        self.sd.send(self.sd.CAMERA_DOWN)
+        print("从近处寻找安全区")
         _count=0
         while True:
             if _count<self.LOOP_NEAR:
@@ -304,192 +370,221 @@ class Planning():
                     # 在外部
                     if result_1<=0:
                         if result_2<=0 and result_3<=0:
-                            sd.send (sd.FORWARD_MID)
+                            self.sd.send (self.sd.FORWARD_MID)
                             continue
                         
                         # 特别左偏
                         elif result_2<=0 and result_3>0:
-                            sd.send (sd.AUTOROTATION_R)
+                            self.sd.send (self.sd.AUTOROTATION_R)
                             time.sleep(0.5)     # 安全区纠偏旋转时间
-                            sd.send(sd.STOP)
+                            self.sd.send(self.sd.STOP)
                             continue
                         
                         # 特别右偏
                         elif result_2>0 and result_3<=0:
-                            sd.send (sd.AUTOROTATION_L)     # 偏太多了，直接大剂量
+                            self.sd.send (self.sd.AUTOROTATION_L)     # 偏太多了，直接大剂量
                             time.sleep(0.5)
-                            sd.send(sd.STOP)
+                            self.sd.send(self.sd.STOP)
                             continue 
                         
                     # 1号点进入
                     elif result_1>0 and result_4<=0:
                         # 直着走进去
                         if result_2<=0 and result_3<=0:
-                            sd.send (sd.FORWARD_MID)
+                            self.sd.send (self.sd.FORWARD_MID)
                             continue
                         # 左偏
                         elif result_2<=0 and result_3>0:
-                            sd.send (sd.TRACK_RIGHT)
+                            self.sd.send (self.sd.TRACK_RIGHT)
                             continue
                         # 右偏
                         elif result_2>0 and result_3<=0:
-                            sd.send (sd.TRACK_LEFT)
+                            self.sd.send (self.sd.TRACK_LEFT)
                             continue
                     # 4号点进入
                     elif result_1>0 and result_4>0:
                         if result_5 <=0:
                             # 直着走进去
                             if result_2<=0 and result_3<=0:
-                                sd.send (sd.FORWARD_SLOW)
+                                self.sd.send (self.sd.FORWARD_SLOW)
                                 continue
                             
                             # 左偏----# 注意这里没有慢速，看看要不要加上一个
                             elif result_2<=0 and result_3>0:
-                                sd.send (sd.TRACK_RIGHT)
+                                self.sd.send (self.sd.TRACK_RIGHT)
                                 continue
                             # 右偏
                             elif result_2>0 and result_3<=0:
-                                sd.send (sd.TRACK_LEFT)
+                                self.sd.send (self.sd.TRACK_LEFT)
                                 continue
                         # 5号点进入
                         else:
-                            sd.send (sd.STOP)
-                            sd.send(sd.GRIPPER_REALSE)
+                            self.sd.send (self.sd.STOP)
+                            self.sd.send(self.sd.GRIPPER_REALSE)
                             time.sleep(0.1)
-                            sd.send(sd.BACKFORWARD_FAST)
+                            self.sd.send(self.sd.BACKWARD_FAST)
                             time.sleep(0.5)
-                            sd.send (sd.STOP)
+                            self.sd.send (self.sd.STOP)
                             return 1
     def rescue(self):
         """
         该函数为完整规划流程
         """
         if self.state_2<2:
-            # 从远处找物料
-            if self.state_1 ==0:
-                ret_ =self.find_block_far_any()
-                # 运行完了
-                # if ret_==0:
-                #     self.state_1=？？？？？？？？？？？？？？？？
-                # elif ret_==1:
-                self.state_1=1
+        #     # 从远处找物料
+        #     if self.state_1 ==0:
+        #         print("从远处找物料")
+        #         ret_ =self.find_block_far_any()
+        #         # 运行完了
+        #         if ret_==0:
+        #             self.state_1=0
+        #         elif ret_==1:
+        #             self.state_1=1
 
-                # 从近处找物料
-            elif self.state_1==1:
-                ret_=self.find_block_near_any()
-                if ret_==0:
-                    self.state_1=0
-                elif ret_==1:
-                    self.state_1=2
+        #         # 从近处找物料
+        #     elif self.state_1==1:
+        #         print("从近处找物料")
+        #         ret_=self.find_block_near_any()
+        #         if ret_==0:
+        #             self.state_1=0
+        #         elif ret_==1:
+        #             self.state_1=2
 
-            # 验证物料
-            elif self.state_1==2:
-                ret_=self.verify_block(goal_=["green"])
-                if ret_==0:
-                    self.state_1=0
-                elif ret_==1:
-                    self.state_1=3
+        #     # 验证物料
+        #     elif self.state_1==2:
+        #         print("验证物料")
+        #         ret_=self.verify_block(goal_=["green"])
+        #         if ret_==0:
+        #             self.state_1=0
+        #         elif ret_==1:
+        #             self.state_1=3
 
-            # 从远处找安全区
-            elif self.state_1==3:
-                ret_=self.find_security_far(goal_=["home",self.MY_HOME])
-                # if ret_==0:             # 要改进，这里留一个超时触发，超时了说明很久没识别到安全区，那么就开到别的地方去看看
-                #     self.state_1=???????????????????????/
-                # elif ret_==1:
-                self.state_1=4
+        #     # 从远处找安全区
+        #     elif self.state_1==3:
+        #         print("从远处找安全区")
+        #         ret_=self.find_security_far(goal_=["home",self.MY_HOME])
+        #         # if ret_==0:             # 要改进，这里留一个超时触发，超时了说明很久没识别到安全区，那么就开到别的地方去看看
+        #         #     self.state_1=???????????????????????/
+        #         # elif ret_==1:
+        #         self.state_1=4
 
             # 对准放下物块
-            elif self.state_1==4:
+            # elif self.state_1==4:
+            if 1:
+                print("对准放下物块")
                 ret_=self.find_security_near(goal_=[self.MY_HOME])
-                # if ret_==0:
-                #     self.state_1=????????
-                self.state_2+=1
+                # # if ret_==0:
+                # #     self.state_1=????????
+                # self.state_2+=1
                 self.state_1=0
 
-        # 夹到两个及以上
-        elif 2<=self.state_2<4:
-            # 从远处找物料
-            if self.state_1 ==0:
-                ret_ =self.find_block_far_important()
-                # 运行完了
-                # if ret_==0:
-                #     self.state_1=？？？？？？？？？？？？？？？？
-                # elif ret_==1:
-                self.state_1=1
+        # # 夹到两个及以上
+        # elif 2<=self.state_2<4:
+        #     print("夹到两个及以上")
+        #     # 从远处找物料
+        #     if self.state_1 ==0:
+        #         print("从远处找物料")
+        #         ret_ =self.find_block_far_important()
+        #         # 运行完了
+        #         # if ret_==0:
+        #         #     self.state_1=？？？？？？？？？？？？？？？？
+        #         # elif ret_==1:
+        #         self.state_1=1
             
-            # 从近处找物料
-            elif self.state_1==1:
-                ret_=self.find_block_near_important()
-                if ret_==0:
-                    self.state_1=0
-                elif ret_==1:
-                    self.state_1=2
+        #     # 从近处找物料
+        #     elif self.state_1==1:
+        #         print("从远处找物料")
+        #         ret_=self.find_block_near_important()
+        #         if ret_==0:
+        #             self.state_1=0
+        #         elif ret_==1:
+        #             self.state_1=2
             
-            # 验证物料
-            elif self.state_1==2:
-                ret_=self.verify_block(goal_=["green","black","orange"])
-                if ret_==0:
-                    self.state_1=0
-                elif ret_==1:
-                    self.state_1=3
+        #     # 验证物料
+        #     elif self.state_1==2:
+        #         print("验证物料")
+        #         ret_=self.verify_block(goal_=["green","black","orange"])
+        #         if ret_==0:
+        #             self.state_1=0
+        #         elif ret_==1:
+        #             self.state_1=3
             
-            # 从远处找安全区
-            elif self.state_1==3:
-                ret_=self.find_security_far(goal_=["home",self.MY_HOME])
-                # if ret_==0:             # 要改进，这里留一个超时触发，超时了说明很久没识别到安全区，那么就开到别的地方去看看
-                #     self.state_1=???????????????????????/
-                # elif ret_==1:
-                self.state_1=4
+        #     # 从远处找安全区
+        #     elif self.state_1==3:
+        #         print("从远处找安全区")
+        #         ret_=self.find_security_far(goal_=["home",self.MY_HOME])
+        #         # if ret_==0:             # 要改进，这里留一个超时触发，超时了说明很久没识别到安全区，那么就开到别的地方去看看
+        #         #     self.state_1=???????????????????????/
+        #         # elif ret_==1:
+        #         self.state_1=4
             
-            # 对准放下物块
-            elif self.state_1==4:
-                ret_=self.find_security_near(goal_=[self.MY_HOME])
-                # if ret_==0:
-                #     self.state_1=????????
-                self.state_2+=1
-                self.state_1=0
+        #     # 对准放下物块
+        #     elif self.state_1==4:
+        #         print("对准放下物块")
+        #         ret_=self.find_security_near(goal_=[self.MY_HOME])
+        #         # if ret_==0:
+        #         #     self.state_1=????????
+        #         self.state_2+=1
+        #         self.state_1=0
 
+        # else:
+        #     print("夹到4个及以上")
+        #     # 从远处找物料
+        #     if self.state_1 ==0:
+        #         print("从远处找物料")
+        #         ret_ =self.find_block_far_any(goal_=["green","black","orange"])
+        #         # 运行完了
+        #         # if ret_==0:
+        #         #     self.state_1=？？？？？？？？？？？？？？？？
+        #         # elif ret_==1:
+        #         self.state_1=1
+            
+        #     # 从近处找物料
+        #     elif self.state_1==1:
+        #         print("从近处找物料")
+        #         ret_=self.find_block_near_any(goal_=["green","black","orange"])
+        #         if ret_==0:
+        #             self.state_1=0
+        #         elif ret_==1:
+        #             self.state_1=2
+            
+        #     # 验证物料
+        #     elif self.state_1==2:
+        #         print("验证物料")
+        #         ret_=self.verify_block(goal_=["green","black","orange"])
+        #         if ret_==0:
+        #             self.state_1=0
+        #         elif ret_==1:
+        #             self.state_1=3
+            
+        #     # 从远处找安全区
+        #     elif self.state_1==3:
+        #         print("从远处找安全区")
+        #         ret_=self.find_security_far(goal_=["home",self.MY_HOME])
+        #         # if ret_==0:             # 要改进，这里留一个超时触发，超时了说明很久没识别到安全区，那么就开到别的地方去看看
+        #         #     self.state_1=???????????????????????/
+        #         # elif ret_==1:
+        #         self.state_1=4
+            
+        #     # 对准放下物块
+        #     elif self.state_1==4:
+        #         print("对准放下物块")
+        #         ret_=self.find_security_near(goal_=[self.MY_HOME])
+        #         # if ret_==0:
+        #         #     self.state_1=????????
+        #         self.state_2+=1
+        #         self.state_1=0
+
+
+    def test_split(self):
+        list=self.dect.detect_closest(goal=["blue_home","red_home","home"])
+        if list is None:
+            pass
         else:
-            # 从远处找物料
-            if self.state_1 ==0:
-                ret_ =self.find_block_far_any(goal_=["green","black","orange"])
-                # 运行完了
-                # if ret_==0:
-                #     self.state_1=？？？？？？？？？？？？？？？？
-                # elif ret_==1:
-                self.state_1=1
-            
-            # 从近处找物料
-            elif self.state_1==1:
-                ret_=self.find_block_near_any(goal_=["green","black","orange"])
-                if ret_==0:
-                    self.state_1=0
-                elif ret_==1:
-                    self.state_1=2
-            
-            # 验证物料
-            elif self.state_1==2:
-                ret_=self.verify_block(goal_=["green","black","orange"])
-                if ret_==0:
-                    self.state_1=0
-                elif ret_==1:
-                    self.state_1=3
-            
-            # 从远处找安全区
-            elif self.state_1==3:
-                ret_=self.find_security_far(goal_=["home",self.MY_HOME])
-                # if ret_==0:             # 要改进，这里留一个超时触发，超时了说明很久没识别到安全区，那么就开到别的地方去看看
-                #     self.state_1=???????????????????????/
-                # elif ret_==1:
-                self.state_1=4
-            
-            # 对准放下物块
-            elif self.state_1==4:
-                ret_=self.find_security_near(goal_=[self.MY_HOME])
-                # if ret_==0:
-                #     self.state_1=????????
-                self.state_2+=1
-                self.state_1=0
-
+            cx=list[1]
+            cy=list[2]
+            w=list[3]
+            h=list[4]
+            approx=self.dect.extract_home(cx,cy,w,h)
 
 

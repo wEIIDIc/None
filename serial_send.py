@@ -1,4 +1,6 @@
 import serial
+import time
+import struct
 
 class SerialSend:
     def __init__(self,port='/dev/ttyS1', baudrate=115200):
@@ -27,6 +29,12 @@ class SerialSend:
         self.PREPARE                = 0X21
         self.PREPARE_DOWN           = 0X22
         self.CAR_RESET              = 0X23
+        self.COLLSISION_CHECK       = 0X24
+        self.AUTOROTATION_L_SLOW    = 0X25
+        self.AUTOROTATION_R_SLOW    = 0X26
+        self.CAR_TRACK              = 0X27
+        self.CAR_TRACK_SLOW         = 0X28
+        self.CAR_AIM                = 0X29
         try:
             self.ser = serial.Serial(port, baudrate, timeout=0.5)
             print(f"串口 {port} 打开成功")
@@ -34,11 +42,13 @@ class SerialSend:
             print(f"串口 {port} 打开失败: {e}")
             self.ser = None
 
-    def send(self,data):
+    def send(self,mode,pixel=0x00):
         """
         输入要发送的数据（见类定义），直接输出要发送的值
         """
-        _data=bytes([data])
-        self.ser.write(_data)
+        for _ in range(3):
+            packet = struct.pack('>BBBHBB', 0x30, 0x40, mode, int(pixel), 0xFF,0xFF)
+            self.ser.write(packet)
+        time.sleep(0.01)
 
     

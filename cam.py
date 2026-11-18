@@ -1,5 +1,7 @@
 import cv2
 import threading
+import numpy as np
+import time
 ######要写一个释放线程的函数stop
 class Camera:
     def __init__(self):
@@ -29,8 +31,10 @@ class Camera:
         while True:
             ret,frame=self.video.read()
             if not ret :
+                # print("114")
                 continue
+            # frame = np.zeros((480, 640, 3), dtype=np.uint8)
             self.img_for_show_img=frame.copy()
             self.img_for_detector=frame.copy()
-
+            # time.sleep(1)
     

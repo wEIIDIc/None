@@ -12,8 +12,10 @@ class Detector():
         self._CLASS_NAMES = ["orange", "green", "black", "blue", "blue_home", "red_home", "home"]
         self.cam=cam    
         self.final_list=None
+        self.mask=None
+        self.roi_grey=None
 
-    def _sigmoid(x):
+    def _sigmoid(self,x):
         return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
 
     def _init_engine(self,model_path):
@@ -61,7 +63,7 @@ class Detector():
         self._MODEL_HEADS = heads
 
 
-    def detect_all(self, conf=0.3, nms=0.75, model_path="./best_rdkx5.bin"):
+    def detect_all(self, conf=0.3, nms=0.80, model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
         """
         输入图片、目标名称字符串（如 "redhome", "black"）,以及yolo识别的要求等。
         返回所有识别到的目标
@@ -69,7 +71,7 @@ class Detector():
         """
         image=self.cam.img_for_detector
         if image is None:
-            print ("detect_all类没有获取到cam.img_for_detector")
+            # print ("detect_all类没有获取到cam.img_for_detector")
             return None
         # 懒加载模型，如果不传入新模型就复用内存里的
         if self._MODEL is None:
@@ -148,6 +150,7 @@ class Detector():
             all_cls.append(cls_keep[valid])
 
         if not all_boxes:
+            self.final_list = None
             return None
 
         boxes = np.concatenate(all_boxes)
@@ -158,6 +161,7 @@ class Detector():
         idxs = cv2.dnn.NMSBoxes(boxes.tolist(), scores.tolist(), conf, nms)
         
         if len(idxs) == 0:
+            self.final_list = None
             return None
             
         idxs = np.array(idxs).flatten()
@@ -189,12 +193,12 @@ class Detector():
             # 5. 转换为你要求的纯 Python List 格式
             self.final_list = result_array.tolist()
             for target in self.final_list:
-                target[0]=self._CLASS_NAMES[target[0]]
+                target[0]=self._CLASS_NAMES[int(target[0])]
         else:
             self.final_list = None
         return self.final_list
 
-    def detect_closest(self, goal,conf=0.3, nms=0.75, model_path="./best_rdkx5.bin"):
+    def detect_closest(self, goal,conf=0.3, nms=0.75, model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
         """
         这个函数负责筛选出最近的且正确的一个目标，输出list[id,cx,cy,w,h]或者None
         """
@@ -212,7 +216,7 @@ class Detector():
                 security_list.append(target)
             elif target[0] in goal:
                 block_list.append(target)
-        if len(security_list)==0:
+        if len(security_list)==0 or security_list is None:
             my_list=block_list
             # if target[0]==goal:
             #     my_list.append(target)
@@ -222,6 +226,7 @@ class Detector():
                 _,_,_,w,h=security
                 if max_area is None:
                     max_area=w*h
+                    _security=security
                 else:
                     if w*h>max_area:
                         max_area=w*h
@@ -229,14 +234,23 @@ class Detector():
             _,cx,cy,w,h=_security
             approx=self.extract_home(cx,cy,w,h) # 这里大概率不会出现一边有图一边没图的结果
             if approx is None or len(approx)==0:
-                my_list=block_list
+                my_list=final_list
             else:
-                for block in block_list:
-                    _,cx,cy,_,_=block
-                    result = cv2.pointPolygonTest(approx, (cx,cy), measureDist=False)
-                    if result < 0:
-                        my_list.append(block)
-                        minimum_distance=640000
+                if "home" not in goal and "red_home" not in goal and "blue_home" not in goal :
+                    for block in block_list:
+                        _,cx,cy,_,_=block
+                        result = cv2.pointPolygonTest(approx, (cx,cy), measureDist=False)
+                        if result < 0:
+                            my_list.append(block)
+                else:
+                    if len(security) ==0 or security is None:
+                        return None
+                    else:
+                        for security in security_list:
+                            id=security[0]
+                            if id in goal:
+                                my_list.append(security)
+        minimum_distance=640000
         minimum_i=0
         if len(my_list) !=0:
             for i,target in enumerate(my_list):
@@ -260,7 +274,7 @@ class Detector():
         # _list=self.detect_closest(goal=["home","red_home","blue_home"])
         image=self.cam.img_for_detector
         if image is None:
-            print ("detect_all类没有获取到cam.img_for_detector")
+            # print ("detect_all类没有获取到cam.img_for_detector")
             return None
         # roi区域
         img_h, img_w = image.shape[:2]    # （480，640，3） 
@@ -276,33 +290,25 @@ class Detector():
         roi = image[y1:y2, x1:x2]
         roi_grey = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         # 安全区
-        mask=cv2.threshold(roi_grey,thresh=100,maxval=255,type=cv2.THRESH_BINARY_INV)
+        _,self.mask=cv2.threshold(roi_grey,thresh=75,maxval=255,type=cv2.THRESH_BINARY_INV)
         kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
-
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # 所有的点都保留（可以试一下，效率慢就改SIMPLE）
-        
+        self.mask = cv2.morphologyEx(self.mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        self.mask = cv2.morphologyEx(self.mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        contours, _ = cv2.findContours(self.mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # 所有的点都保留（可以试一下，效率慢就改SIMPLE）
         if not contours:
             return None
-
         largest_contour = max(contours, key=cv2.contourArea)
-
         # 计算轮廓周长
         peri = cv2.arcLength(largest_contour, True)
         # 用 2% 的精度去拟合多边形
         # 可以放宽精度再试一次，更多点
         approx = cv2.approxPolyDP(largest_contour, 0.02 * peri, True)   # 可调参
-        
         # 将 4x1x2 的形状转换成 4x2 的形状
         approx = approx.reshape(-1, 2)
         # 还原点到原图
         for point in approx:
             point[0] += x1
             point[1] += y1
-
+        self.roi_grey=roi_grey
         return approx
 
-
-
-        

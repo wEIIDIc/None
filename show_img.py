@@ -10,15 +10,17 @@ class ShowImage:
         self.dect=detector
         self.image1=None
         self.image2=None
+        self.image3=None
+        self.image4=None
 
     def _draw_static(self):
         # 这些没涉及到传进来的img本体
-        cv2.line(self.image1,(0,self.pl.THRESHOLD_Y1),(640,self.pl.THRESHOLD_Y1),(0,0,255),2)
-        cv2.line(self.image1,(0,self.pl.THRESHOLD_Y2),(640,self.pl.THRESHOLD_Y2),(0,0,255),2)
-        cv2.line(self.image1,(0,self.pl.THRESHOLD_Y3),(640,self.pl.THRESHOLD_Y3),(0,0,255),2)
-        cv2.line(self.image1,(0,self.pl.VERIFY_Y1),(640,self.pl.VERIFY_Y1),(0,0,255),2)
-        cv2.line(self.image1,(self.pl.VERIFY_X1,0),(self.pl.VERIFY_X1,480),(0,0,255),2)
-        cv2.line(self.image1,(self.pl.VERIFY_X2,0),(self.pl.VERIFY_X2,480),(0,0,255),2)
+        # cv2.line(self.image1,(0,self.pl.THRESHOLD_Y1),(640,self.pl.THRESHOLD_Y1),(0,0,255),2)
+        # cv2.line(self.image1,(0,self.pl.THRESHOLD_Y2),(640,self.pl.THRESHOLD_Y2),(0,0,255),2)
+        # cv2.line(self.image1,(0,self.pl.THRESHOLD_Y3),(640,self.pl.THRESHOLD_Y3),(0,0,255),2)
+        # cv2.line(self.image1,(0,self.pl.VERIFY_Y1),(640,self.pl.VERIFY_Y1),(0,0,255),2)
+        # cv2.line(self.image1,(self.pl.VERIFY_X1,0),(self.pl.VERIFY_X1,480),(0,0,255),2)
+        # cv2.line(self.image1,(self.pl.VERIFY_X2,0),(self.pl.VERIFY_X2,480),(0,0,255),2)
         cv2.circle(self.image1,(self.pl.POINT_1[0],self.pl.POINT_1[1]),2,(255,255,255),-1)
         cv2.circle(self.image1,(self.pl.POINT_2[0],self.pl.POINT_2[1]),2,(255,255,255),-1)
         cv2.circle(self.image1,(self.pl.POINT_3[0],self.pl.POINT_3[1]),2,(255,255,255),-1)
@@ -31,6 +33,7 @@ class ShowImage:
             return
         else:
             for target in _list:
+                id=target[0]
                 cx=target[1]
                 cy=target[2]
                 w=target[3]
@@ -40,19 +43,25 @@ class ShowImage:
                 x2 = min(640, int(cx + w / 2) )
                 y2 = min(480, int(cy + h / 2) )
                 cv2.rectangle(self.image2,(x1,y1),(x2,y2),(0,255,0),2)
-
+                cv2.putText(self.image2,id,(x1,int(y1+h)),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,255),2)
     def _show(self):
         try:
             while True:
                 if self.cam.img_for_show_img is None:
-                    print("ShowImage类没接收到self.cam.img_for_show_img")
+                    # print("ShowImage类没接收到self.cam.img_for_show_img")
                     continue
-                self.image1=self.cam.img_for_show_img.copy()
-                self.image2=self.cam.img_for_show_img.copy()
-                self._draw_static()
-                self._draw_detect()
-                cv2.imshow("static_threshold",self.image1)
-                cv2.imshow("real_time",self.image2)
+                # self.image1=self.cam.img_for_show_img.copy()
+                # self.image2=self.cam.img_for_show_img.copy()
+                # self._draw_static()
+                # self._draw_detect()
+                # cv2.imshow("static_threshold",self.image1)
+                # cv2.imshow("real_time",self.image2)
+                if self.dect.mask is not None:
+                    self.image3=self.dect.mask.copy()
+                    cv2.imshow("mask",self.image3)
+                if self.dect.roi_grey is not None:
+                    self.image4=self.dect.roi_grey.copy()
+                    cv2.imshow("roi_grey",self.image4)
                 cv2.waitKey(1)
         except KeyboardInterrupt:
             print("show函数结束")
