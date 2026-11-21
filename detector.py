@@ -63,7 +63,8 @@ class Detector():
         self._MODEL_HEADS = heads
 
 
-    def detect_all(self, conf=0.3, nms=0.80, model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
+    def detect_all(self, conf=0.3, nms=0.45, 
+    model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
         """
         输入图片、目标名称字符串（如 "redhome", "black"）,以及yolo识别的要求等。
         返回所有识别到的目标
@@ -158,16 +159,27 @@ class Detector():
         classes = np.concatenate(all_cls)
 
         # NMS 去重
-        idxs = cv2.dnn.NMSBoxes(boxes.tolist(), scores.tolist(), conf, nms)
-        
-        if len(idxs) == 0:
+        # cv2.dnn.NMSBoxes 要求 [x, y, w, h]，且它不认类别，必须自己按类别分组
+        xywh = np.stack([boxes[:, 0], boxes[:, 1],
+                         boxes[:, 2] - boxes[:, 0],
+                         boxes[:, 3] - boxes[:, 1]], axis=1)
+
+        keep_idx = []
+        for c in np.unique(classes):
+            m = np.flatnonzero(classes == c)
+            idx = cv2.dnn.NMSBoxes(xywh[m].tolist(), scores[m].tolist(), conf, nms)
+            if idx is not None and len(idx) > 0:
+                keep_idx.extend(m[np.array(idx).flatten()].tolist())
+
+        keep_idx = np.array(sorted(keep_idx), dtype=int)
+        if len(keep_idx) == 0:
             self.final_list = None
             return None
-            
-        idxs = np.array(idxs).flatten()
-        final_boxes = boxes[idxs]
-        # final_scores = scores[idxs]
-        final_classes = classes[idxs]
+
+        final_boxes = boxes[keep_idx]
+        # final_scores = scores[keep_idx]
+        final_classes = classes[keep_idx]
+
 
         # 解包
         if len(final_boxes) > 0:
@@ -198,7 +210,8 @@ class Detector():
             self.final_list = None
         return self.final_list
 
-    def detect_closest(self, goal,conf=0.3, nms=0.75, model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
+    def detect_closest(self, goal,conf=0.3, nms=0.45, 
+    model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
         """
         这个函数负责筛选出最近的且正确的一个目标，输出list[id,cx,cy,w,h]或者None
         """
