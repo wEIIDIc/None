@@ -13,7 +13,20 @@ class Detector():
         self.cam=cam    
         self.final_list=None
         self.mask=None
-        self.roi_grey=None
+        self.approx=None
+        self.LOWER_SERCURITY=np.array([0,134,80])
+        self.UPPER_SERCURITY=np.array([255,160,125])
+        self.LOWER_GREEN=np.array([0,50,130])
+        self.UPPER_GREEN=np.array([255,120,200])
+        self.LOWER_ORANGE=np.array([12,136,130])
+        self.UPPER_ORANGE=np.array([255,169,169])
+        self.LOWER_BLUE=np.array([0,132,56])
+        self.UPPER_BLUE=np.array([255,169,105])
+        self.mask_sct=None
+        self.mask_green=None
+        self.mask_blue=None
+        self.mask_orange=None
+        self.roi_lab=None
 
     def _sigmoid(self,x):
         return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
@@ -64,7 +77,7 @@ class Detector():
 
 
     def detect_all(self, conf=0.3, nms=0.45, 
-    model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
+        model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
         """
         输入图片、目标名称字符串（如 "redhome", "black"）,以及yolo识别的要求等。
         返回所有识别到的目标
@@ -211,7 +224,7 @@ class Detector():
         return self.final_list
 
     def detect_closest(self, goal,conf=0.3, nms=0.45, 
-    model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
+        model_path="/home/sunrise/RS_workplace/models/26_1108/best_rdkx5.bin"):
         """
         这个函数负责筛选出最近的且正确的一个目标，输出list[id,cx,cy,w,h]或者None
         """
@@ -283,7 +296,7 @@ class Detector():
         输入图像，输入所识别的安全区中心点 cx, cy 和宽 w, 高 h；
         输出拟合出来的安全区角点 approx (4x2 的 numpy 数组) 或 None。
         """
-        roi_padding=15
+        roi_padding=3
         # _list=self.detect_closest(goal=["home","red_home","blue_home"])
         image=self.cam.img_for_detector
         if image is None:
@@ -301,12 +314,23 @@ class Detector():
             return None
             
         roi = image[y1:y2, x1:x2]
-        roi_grey = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        # roi=cv2.medianBlur(roi,11)
+        roi_lab = cv2.cvtColor(roi, cv2.COLOR_BGR2Lab)
         # 安全区
-        _,self.mask=cv2.threshold(roi_grey,thresh=75,maxval=255,type=cv2.THRESH_BINARY_INV)
-        kernel = np.ones((5, 5), np.uint8)
-        self.mask = cv2.morphologyEx(self.mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-        self.mask = cv2.morphologyEx(self.mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        kernel = np.ones((5,5), np.uint8)
+        self.mask_sct=cv2.inRange(roi_lab,self.LOWER_SERCURITY,self.UPPER_SERCURITY)
+        self.mask_green=cv2.inRange(roi_lab,self.LOWER_GREEN,self.UPPER_GREEN)
+        self.mask_orange=cv2.inRange(roi_lab,self.LOWER_ORANGE,self.UPPER_ORANGE)
+        self.mask_blue=cv2.inRange(roi_lab,self.LOWER_BLUE,self.UPPER_BLUE)
+        # 特别近以至于掩膜粘在一起则判定为在安全区内
+        mask=self.mask_sct | self.mask_green | self.mask_blue | self.mask_orange
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        self.mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        # # 只保留最大连通域
+        # num, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+        # if num > 1:
+        #     idx = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+        #     self.mask = (labels == idx).astype(np.uint8) * 255
         contours, _ = cv2.findContours(self.mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # 所有的点都保留（可以试一下，效率慢就改SIMPLE）
         if not contours:
             return None
@@ -315,13 +339,13 @@ class Detector():
         peri = cv2.arcLength(largest_contour, True)
         # 用 2% 的精度去拟合多边形
         # 可以放宽精度再试一次，更多点
-        approx = cv2.approxPolyDP(largest_contour, 0.02 * peri, True)   # 可调参
+        approx = cv2.approxPolyDP(largest_contour, 0.01 * peri, True)   # 可调参
         # 将 4x1x2 的形状转换成 4x2 的形状
         approx = approx.reshape(-1, 2)
         # 还原点到原图
         for point in approx:
             point[0] += x1
             point[1] += y1
-        self.roi_grey=roi_grey
+        self.approx=approx
         return approx
 

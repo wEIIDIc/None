@@ -5,7 +5,7 @@ import time
 ######要写一个释放线程的函数stop
 class Camera:
     def __init__(self):
-        self.video = cv2.VideoCapture(0)
+        self.video = cv2.VideoCapture(0)    #"D:\CodesProject\GC-Intelligent-Rescue\videos\train_8.avi"
         if not self.video.isOpened():
             print("无法打开摄像头")
             exit(1)

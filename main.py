@@ -15,7 +15,7 @@ def main():# 主线程
     time.sleep(3)
     while True:
         # planning.rescue()
-        planning.test_split()
+        planning.test_approx()
     print("主线程已退出")
 
 if __name__=='__main__':

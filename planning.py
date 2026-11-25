@@ -23,11 +23,13 @@ class Planning():
         # 安全区纠偏旋转时间
         self.VERIFY_X1=576
         self.VERIFY_X2=64
-        self.POINT_1=[320,120]  # 前
+        self.POINT_1=[320,140]  # 前
         self.POINT_2=[160,240]  # 左
         self.POINT_3=[320,240]  # 中
         self.POINT_4=[480,240]  # 右
-        self.POINT_5=[320,360]  # 后
+        self.POINT_5=[320,400]  # 后
+        self.POINT_6=[160,320]  # 左后
+        self.POINT_7=[480,320]  # 右后
         self.dect=detector
         self.MY_HOME="blue_home"
         self.sd=serial_send
@@ -215,7 +217,7 @@ class Planning():
                         # 特别近
                         else:
                             self.sd.send (self.sd.FORWARD_SLOW)
-                            time.sleep(0.5)         # 抓取间隔
+                            time.sleep(1)         # 抓取间隔
                             self.sd.send (self.sd.STOP)
                             self.sd.send (self.sd.GRIPPER_GRASP)
                             return 1
@@ -348,10 +350,13 @@ class Planning():
                 self.sd.send(self.sd.STOP)
 
     def find_security_near(self,goal_):
-        self.sd.send (self.sd.FORWARD_SLOW)
+        # self.sd.send (self.sd.FORWARD_SLOW)
+        self.sd.send(self.sd.GRIPPER_GRASP)
+        print("闭合")
         self.sd.send(self.sd.CAMERA_DOWN)
         print("从近处寻找安全区")
         _count=0
+        _count_1=0
         while True:
             if _count<self.LOOP_NEAR:
                 my_list=self.dect.detect_closest(goal_)
@@ -367,65 +372,102 @@ class Planning():
                     result_3=cv2.pointPolygonTest(approx,(self.POINT_3[0],self.POINT_3[1]),False)
                     result_4=cv2.pointPolygonTest(approx,(self.POINT_4[0],self.POINT_4[1]),False)
                     result_5=cv2.pointPolygonTest(approx,(self.POINT_5[0],self.POINT_5[1]),False)
+                    result_6=cv2.pointPolygonTest(approx,(self.POINT_6[0],self.POINT_6[1]),False)
+                    result_7=cv2.pointPolygonTest(approx,(self.POINT_7[0],self.POINT_7[1]),False)
                     # 在外部
                     if result_1<=0:
-                        if result_2<=0 and result_3<=0:
-                            self.sd.send (self.sd.FORWARD_MID)
+                        if result_2<=0 and result_4<=0:
+                            self.sd.send (self.sd.FORWARD_SLOW)
                             continue
                         
                         # 特别左偏
-                        elif result_2<=0 and result_3>0:
-                            self.sd.send (self.sd.AUTOROTATION_R)
+                        elif result_2<=0 and result_4>0:
+                            self.sd.send (self.sd.AUTOROTATION_R_SLOW)
                             time.sleep(0.5)     # 安全区纠偏旋转时间
                             self.sd.send(self.sd.STOP)
                             continue
                         
                         # 特别右偏
-                        elif result_2>0 and result_3<=0:
-                            self.sd.send (self.sd.AUTOROTATION_L)     # 偏太多了，直接大剂量
+                        elif result_2>0 and result_4<=0:
+                            self.sd.send (self.sd.AUTOROTATION_L_SLOW)     # 偏太多了，直接大剂量
                             time.sleep(0.5)
                             self.sd.send(self.sd.STOP)
                             continue 
                         
                     # 1号点进入
-                    elif result_1>0 and result_4<=0:
-                        # 直着走进去
-                        if result_2<=0 and result_3<=0:
-                            self.sd.send (self.sd.FORWARD_MID)
-                            continue
+                    elif result_1>0 and result_3<=0:
                         # 左偏
-                        elif result_2<=0 and result_3>0:
-                            self.sd.send (self.sd.TRACK_RIGHT)
+                        if result_2<=0 and result_4>0:
+                            self.sd.send (self.sd.AUTOROTATION_R_SLOW)
+                            time.sleep(0.5)
                             continue
                         # 右偏
-                        elif result_2>0 and result_3<=0:
-                            self.sd.send (self.sd.TRACK_LEFT)
+                        elif result_2>0 and result_4<=0:
+                            self.sd.send (self.sd.AUTOROTATION_L_SLOW)
+                            time.sleep(0.5)
                             continue
-                    # 4号点进入
-                    elif result_1>0 and result_4>0:
+                        # 直着走进去
+                        # if result_2<=0 and result_3<=0:
+                        else:
+                            self.sd.send (self.sd.FORWARD_SLOW)
+                            continue
+                        
+                    # 3号点进入
+                    elif result_1>0 and result_3>0:
                         if result_5 <=0:
-                            # 直着走进去
-                            if result_2<=0 and result_3<=0:
+                            if _count_1>=5:
                                 self.sd.send (self.sd.FORWARD_SLOW)
+                                time.sleep(1)
+                                _count_1=0
                                 continue
-                            
-                            # 左偏----# 注意这里没有慢速，看看要不要加上一个
-                            elif result_2<=0 and result_3>0:
-                                self.sd.send (self.sd.TRACK_RIGHT)
-                                continue
-                            # 右偏
-                            elif result_2>0 and result_3<=0:
-                                self.sd.send (self.sd.TRACK_LEFT)
-                                continue
+                            else:
+                                # 左偏----# 注意这里没有慢速，看看要不要加上一个
+                                if result_2<=0 and result_4>0:
+                                    # self.sd.send (self.sd.TRACK_RIGHT)
+                                    self.sd.send (self.sd.AUTOROTATION_R_SLOW)
+                                    time.sleep(0.1)
+                                    _count_1+=1
+                                    continue
+                                # 右偏
+                                elif result_2>0 and result_4<=0:
+                                    self.sd.send (self.sd.AUTOROTATION_L_SLOW)
+                                    time.sleep(0.1)
+                                    _count_1+=1
+                                    continue
+                                                            # 直着走进去
+                                # if result_2<=0 and result_3<=0:
+                                else:
+                                    # 左偏
+                                    if result_6<=0 and result_7>0:
+                                        # self.sd.send (self.sd.TRACK_RIGHT)
+                                        self.sd.send (self.sd.AUTOROTATION_R_SLOW)
+                                        time.sleep(0.1)
+                                        _count_1+=1
+                                        continue
+                                    # 右偏
+                                    elif result_6>0 and result_7<=0:
+                                        self.sd.send (self.sd.AUTOROTATION_L_SLOW)
+                                        time.sleep(0.1)
+                                        _count_1+=1
+                                        continue
+                                    else:
+                                        self.sd.send (self.sd.FORWARD_SLOW)
+                                        _count_1=0
+                                        continue
                         # 5号点进入
                         else:
-                            self.sd.send (self.sd.STOP)
                             self.sd.send(self.sd.GRIPPER_REALSE)
-                            time.sleep(0.1)
-                            self.sd.send(self.sd.BACKWARD_FAST)
-                            time.sleep(0.5)
+                            self.sd.send (self.sd.FORWARD_MID)
+                            time.sleep(1.3)
+                            self.sd.send(self.sd.BACKWARD_SLOW)
+                            time.sleep(2)
                             self.sd.send (self.sd.STOP)
+                            self.sd.send(self.sd.GRIPPER_GRASP)
                             return 1
+            else:
+                self.sd.send(self.sd.STOP)
+                return 0
+
     def rescue(self):
         """
         该函数为完整规划流程
@@ -471,12 +513,12 @@ class Planning():
             # 对准放下物块
             # elif self.state_1==4:
             if 1:
-                print("对准放下物块")
+                # print("对准放下物块")
                 ret_=self.find_security_near(goal_=[self.MY_HOME])
                 # # if ret_==0:
                 # #     self.state_1=????????
                 # self.state_2+=1
-                self.state_1=0
+                # self.state_1=0
 
         # # 夹到两个及以上
         # elif 2<=self.state_2<4:
@@ -576,7 +618,7 @@ class Planning():
         #         self.state_1=0
 
 
-    def test_split(self):
+    def test_approx(self):
         list=self.dect.detect_closest(goal=["blue_home","red_home","home"])
         if list is None:
             pass
@@ -585,6 +627,7 @@ class Planning():
             cy=list[2]
             w=list[3]
             h=list[4]
-            approx=self.dect.extract_home(cx,cy,w,h)
+            self.dect.extract_home(cx,cy,w,h)
+            
 
 
